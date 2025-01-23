@@ -17,8 +17,6 @@ app.get("/", (req, res) => {
 app.get("/convert", async (req, res) => {
   try {
     const fileBuffer = fs.readFileSync(process.env.CSV_PATH);
-
-    // Read and parse CSV
     const csv = fileBuffer.toString();
 
     if (!csv) {

@@ -119,4 +119,4 @@ function getPercentageDistribution(count) {
   return Math.floor((count / totalRecord) * 100);
 }
 
-module.exports = parseLargeCsv;
+module.exports = { parseLargeCsv };
