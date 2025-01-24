@@ -1,5 +1,6 @@
 const connection = require("../db-connector");
 let totalRecord = 0;
+let batchNumber = -1;
 const ageGroupCount = {
   "<20": 0,
   "20-40": 0,
@@ -21,7 +22,8 @@ async function parseLargeCsv(csvData) {
     );
   }
 
-  const result = new Array(lines.length - 1);
+  const batchSize = process.env.BATCH_SIZE;
+  const result = [];
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -45,13 +47,47 @@ async function parseLargeCsv(csvData) {
       }
     });
 
-    result[i - 1] = obj;
+    result.push(obj);
+
+    if (result.length >= batchSize) {
+      batchNumber++;
+      await processAndUploadResult(result);
+      result.length = 0;
+    }
   }
 
-  await processAndUploadResult(result);
+  if (result.length > 0) {
+    batchNumber++;
+    await processAndUploadResult(result);
+  }
+  printDistributionStats();
 }
 
-function classifyAgeGroup(age) {
+
+function printDistributionStats () {
+  const printData = [
+    {
+      "Age-Group": "<20",
+      "% Distribution": getPercentageDistribution(ageGroupCount["<20"]),
+    },
+    {
+      "Age-Group": "20-40",
+      "% Distribution": getPercentageDistribution(ageGroupCount["20-40"]),
+    },
+    {
+      "Age-Group": "40-60",
+      "% Distribution": getPercentageDistribution(ageGroupCount["40-60"]),
+    },
+    {
+      "Age-Group": ">60",
+      "% Distribution": getPercentageDistribution(ageGroupCount[">60"]),
+    },
+  ];
+
+  console.table(printData);
+}
+
+function segregateAgeGroup(age) {
   if (age < 20) {
     ageGroupCount["<20"]++;
   } else if (age < 40) {
@@ -86,33 +122,13 @@ async function processAndUploadResult(resultData) {
         `INSERT INTO users (name, age, address, additional_info) VALUES ($1, $2, $3, $4)`,
         [tuple[0], tuple[2], tuple[1], data]
       );
-      totalRecord++;
-      classifyAgeGroup(tuple[2]);
     } catch (error) {
       throw new Error("Error inserting data into PostgreSQL:", error);
     }
+    totalRecord++;
+    segregateAgeGroup(tuple[2]);
   }
-
-  const printData = [
-    {
-      "Age-Group": "<20",
-      "% Distribution": getPercentageDistribution(ageGroupCount["<20"]),
-    },
-    {
-      "Age-Group": "20-40",
-      "% Distribution": getPercentageDistribution(ageGroupCount["20-40"]),
-    },
-    {
-      "Age-Group": "40-60",
-      "% Distribution": getPercentageDistribution(ageGroupCount["40-60"]),
-    },
-    {
-      "Age-Group": ">60",
-      "% Distribution": getPercentageDistribution(ageGroupCount[">60"]),
-    },
-  ];
-
-  console.table(printData);
+  console.log('successfully processed batch #' + batchNumber);
 }
 
 function getPercentageDistribution(count) {
