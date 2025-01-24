@@ -8,11 +8,6 @@ app.use(express.json());
 
 const convertController = require("./controllers/convertController");
 
-// API route to test API
-app.get("/", (req, res) => {
-  res.send("Convert to JSON API is Working as Expected");
-});
-
 // API route to convert CSV to JSON
 app.get("/convert", async (req, res) => {
   try {

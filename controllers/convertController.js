@@ -1,6 +1,7 @@
-const connection = require("../db-connector");
+const dbConnector = require("../db-connector");
 let totalRecord = 0;
 let batchNumber = -1;
+let dbConnection;
 const ageGroupCount = {
   "<20": 0,
   "20-40": 0,
@@ -25,6 +26,7 @@ async function parseLargeCsv(csvData) {
   const batchSize = process.env.BATCH_SIZE;
   const result = [];
 
+  dbConnection = await dbConnector.createConnection();
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -60,9 +62,54 @@ async function parseLargeCsv(csvData) {
     batchNumber++;
     await processAndUploadResult(result);
   }
+  dbConnector.releaseConnection();
   printDistributionStats();
 }
 
+async function processAndUploadResult(resultData) {
+
+  for (const data of resultData) {
+    let tuple = [];
+    if (data["name"]) {
+      tuple.push(data["name"]["firstName"] + " " + data["name"]["lastName"]);
+      delete data["name"];
+    }
+
+    if (data["address"]) {
+      tuple.push(data["address"]);
+      delete data["address"];
+    }
+
+    if (data["age"]) {
+      tuple.push(data["age"]);
+      delete data["age"];
+    }
+
+    try {
+      await dbConnection.query(
+        `INSERT INTO users (name, age, address, additional_info) VALUES ($1, $2, $3, $4)`,
+        [tuple[0], tuple[2], tuple[1], data]
+      );
+    } catch (error) {
+      throw new Error("Error inserting data into PostgreSQL:", error);
+    }
+    totalRecord++;
+    segregateAgeGroup(tuple[2]);
+  }
+  console.log('successfully processed batch #' + batchNumber);
+}
+
+function segregateAgeGroup(age) {
+  if (age < 20) {
+    ageGroupCount["<20"]++;
+  } else if (age < 40) {
+    ageGroupCount["20-40"]++;
+  } else if (age < 60) {
+    ageGroupCount["40-60"]++;
+  } else {
+    ageGroupCount[">60"]++;
+  }
+}
 
 function printDistributionStats () {
   const printData = [
@@ -85,50 +132,6 @@ function printDistributionStats () {
   ];
 
   console.table(printData);
-}
-
-function segregateAgeGroup(age) {
-  if (age < 20) {
-    ageGroupCount["<20"]++;
-  } else if (age < 40) {
-    ageGroupCount["20-40"]++;
-  } else if (age < 60) {
-    ageGroupCount["40-60"]++;
-  } else {
-    ageGroupCount[">60"]++;
-  }
-}
-
-async function processAndUploadResult(resultData) {
-  for (const data of resultData) {
-    let tuple = [];
-    if (data["name"]) {
-      tuple.push(data["name"]["firstName"] + " " + data["name"]["lastName"]);
-      delete data["name"];
-    }
-
-    if (data["address"]) {
-      tuple.push(data["address"]);
-      delete data["address"];
-    }
-
-    if (data["age"]) {
-      tuple.push(data["age"]);
-      delete data["age"];
-    }
-
-    try {
-      await connection.query(
-        `INSERT INTO users (name, age, address, additional_info) VALUES ($1, $2, $3, $4)`,
-        [tuple[0], tuple[2], tuple[1], data]
-      );
-    } catch (error) {
-      throw new Error("Error inserting data into PostgreSQL:", error);
-    }
-    totalRecord++;
-    segregateAgeGroup(tuple[2]);
-  }
-  console.log('successfully processed batch #' + batchNumber);
 }
 
 function getPercentageDistribution(count) {
